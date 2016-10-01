@@ -1,0 +1,67 @@
+\documentclass[11pt,letterpaper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{placeins}
+\usepackage{listings}
+
+\begin{document}
+\noindent Landon Carter \\
+9/22/16
+6.111 PS4
+
+\section{}
+\subsection{A}
+The smallest clock period is 9 ns. That's the $t_{PD}$ of the two inverters, plus $t_{PD}$ for the first D register, plus the $t_S$ of the second register.
+
+\subsection{B}
+The new circuit would not work correctly, because the $t_H$ of the second register would not be met.
+
+\subsection{C}
+S0 = 0, S1 = 0
+
+\subsection{D}
+S0 = 0, S1 = 1
+
+\subsection{E}
+The skew actually helps us - we can now have a clock period of 8 ns.
+
+\section{}
+
+\begin{lstlisting}[language=Verilog]
+module jk
+	(input j, k, preset, clear, clk,
+	 output q, qbar);
+
+	reg state;
+
+	always @(posedge clk or negedge preset or negedge clear) begin
+		if (preset && claer) begin  // standard operation
+			case ({j, k})
+				2'b00: state <= state;
+				2'b01: state <= j;
+				2'b10: state <= j;
+				2'b11: state <= ~state;
+				default: state <= state;
+			endcase
+		end
+		else if (~preset) begin  // set state
+			state <= 1;
+		end
+		else if (~clear) begin  // clear state
+			state <= 0;
+		end
+	end
+
+	assign q = state;
+	assign qbar = ~q;
+
+endmodule
+\end{lstlisting}
+
+
+
+\end{document}
