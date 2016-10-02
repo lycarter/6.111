@@ -503,20 +503,54 @@ module pong_game (
    output pblank,	// pong game's blanking
    output [23:0] pixel	// pong game's pixel  // r=23:16, g=15:8, b=7:0 
    );
-
-   wire [2:0] checkerboard;
-	
-   // REPLACE ME! The code below just generates a color checkerboard
-   // using 64 pixel by 64 pixel squares.
    
    assign phsync = hsync;
    assign pvsync = vsync;
    assign pblank = blank;
-   assign checkerboard = hcount[8:6] + vcount[8:6];
 
-   // here we use three bits from hcount and vcount to generate the \
-   // checkerboard
+   // REPLACE ME! The code below just generates a color checkerboard
+   // using 64 pixel by 64 pixel squares.
 
-   assign pixel = {{8{checkerboard[2]}}, {8{checkerboard[1]}}, {8{checkerboard[0]}}} ;
+   // wire [2:0] checkerboard;
+   // assign checkerboard = hcount[8:6] + vcount[8:6];
+
+   // // here we use three bits from hcount and vcount to generate the \
+   // // checkerboard
+
+   // assign pixel = {{8{checkerboard[2]}}, {8{checkerboard[1]}}, {8{checkerboard[0]}}} ;
+
+   wire [23:0] puck_pixel;
+   reg [9:0] puck_y;
+   reg [10:0] puck_x;
+   reg puck_x_vel, puck_y_vel;
+
+   wire [23:0] paddle_pixel;
+   reg [9:0] paddle_y;
+   always @(negedge vsync) begin
+      if (reset) begin
+         // paddle starts and resets to somewhere in the middle
+         paddle_y <= 300;
+         // puck starts and resets somewhere in the middle, heading southeast
+         puck_x <= 300;
+         puck_y <= 500;
+         puck_x_vel <= 1;
+         puck_y_vel <= 1;
+      end
+      else begin
+         if (down & (paddle_y <= 635)) paddle_y <= paddle_y + 4;
+         else if (up & (paddle_y >= 3)) paddle_y <= paddle_y - 4;
+      end
+   end
+   blob #(.WIDTH(16), .HEIGHT(128), .COLOR(24'hFF_FF_00))  // yellow
+      paddle1(.x(11'd0), .y(paddle_y), .hcount(hcount), .vcount(vcount), .pixel(paddle_pixel));
+
+
+
+   blob #(.WIDTH(64), .HEIGHT(64), .COLOR(24'hFF_00_00))  // red
+      puck(.x(puck_x), .y(puck_y), .hcount(hcount), .vcount(vcount), .pixel(puck_pixel));
+
+
+   // FINAL PIXEL ASSIGNMENT
+   assign pixel = blank ? 24'b0 : (paddle_pixel ^ puck_pixel);
      
 endmodule
