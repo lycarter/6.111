@@ -466,8 +466,8 @@ endmodule
 module blob
    #(parameter WIDTH = 64,             // default width: 64 pixels
      parameter HEIGHT = 64,            // default height: 64 pixels
-     parameter COLOR = 24'hFF_FF_FF);  // default color: white
-   (input [10:0] x,hcount,
+     parameter COLOR = 24'hFF_FF_FF)  // default color: white
+   (input [10:0] x, hcount,
     input [9:0] y, vcount,
     output reg [23:0] pixel);
 
@@ -486,7 +486,17 @@ endmodule
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-module pong_game (
+module pong_game 
+   #(parameter PADDLE_HEIGHT = 128,  // default paddle height 128 px
+     parameter PADDLE_WIDTH = 16,    // default paddle width 16 px
+     parameter PADDLE_SPEED = 4,     // default paddle speed per tick 4 px
+     parameter PUCK_DIM = 64,        // default puck height/width 64 px
+     parameter SCREEN_WIDTH = 1023,  // default screen width 1024 px
+     parameter SCREEN_HEIGHT = 767,  // default screen height 768 px
+     parameter PADDLE_START = 300,   // default paddle start position 300 px
+     parameter PUCK_X_START = 500,   // default puck x start position 500 px
+     parameter PUCK_Y_START = 300)   // default puck y start position 300 px
+   (
    input vclock,	// 65MHz clock
    input reset,		// 1 to initialize module
    input up,		// 1 when paddle should move up
@@ -526,26 +536,78 @@ module pong_game (
 
    wire [23:0] paddle_pixel;
    reg [9:0] paddle_y;
+
+   reg game_over;
+
    always @(negedge vsync) begin
       if (reset) begin
          // paddle starts and resets to somewhere in the middle
-         paddle_y <= 300;
+         paddle_y <= PADDLE_START;
          // puck starts and resets somewhere in the middle, heading southeast
-         puck_x <= 300;
-         puck_y <= 500;
+         puck_x <= PUCK_X_START;
+         puck_y <= PUCK_Y_START;
          puck_x_vel <= 1;
          puck_y_vel <= 1;
+         game_over <= 0;
       end
       else begin
-         if (down & (paddle_y <= 635)) paddle_y <= paddle_y + 4;
-         else if (up & (paddle_y >= 3)) paddle_y <= paddle_y - 4;
+         // PADDLE LOGIC
+         if (!game_over & down & (paddle_y <= (SCREEN_HEIGHT - PADDLE_HEIGHT - PADDLE_SPEED) )) paddle_y <= paddle_y + PADDLE_SPEED;
+         else if (!game_over & up & (paddle_y >= (PADDLE_SPEED - 1))) paddle_y <= paddle_y - PADDLE_SPEED;
+
+         // PUCK LOGIC
+
+         // x collision puck operation
+         // puck hits right wall
+         if (puck_x >= (SCREEN_WIDTH - PUCK_DIM)) begin
+            puck_x_vel <= 0;
+            puck_x <= puck_x - pspeed;
+         end
+         // puck hits paddle
+         else if (puck_x <= (PADDLE_WIDTH - 1) && puck_y >= paddle_y) begin
+            if (puck_y - paddle_y <= PADDLE_HEIGHT) begin
+               puck_x_vel <= 1;
+               puck_x <= puck_x + pspeed;
+            end
+         end
+         else if (puck_x <= (PADDLE_WIDTH - 1) && puck_y < paddle_y) begin
+            if (paddle_y - puck_x <= PUCK_DIM) begin
+               puck_x_vel <= 1;
+               puck_x <= puck_x + pspeed;
+            end
+         end
+         // puck hits left wall
+         else if (puck_x <= pspeed) begin
+            // game over
+            game_over <= 1;
+         end
+         // x normal puck operation
+         else puck_x <= puck_x_vel ? puck_x + pspeed : puck_x - pspeed;
+
+         // y collision puck operation
+         // puck hits bottom wall
+         if (!game_over & puck_y <= pspeed) begin
+            puck_y_vel <= 1;
+            puck_y <= pspeed + 1;
+         end
+         // puck hits top wall
+         else if (!game_over & puck_y >= (SCREEN_HEIGHT - PUCK_DIM - pspeed)) begin
+            puck_y_vel <= 0;
+            puck_y <= SCREEN_HEIGHT - PUCK_DIM - pspeed - 1;
+         end
+         // y normal puck operation
+         else if (!game_over) puck_y <= puck_y_vel ? puck_y + pspeed : puck_y - pspeed;
+
       end
    end
+
+   // draw paddle
+
    blob #(.WIDTH(16), .HEIGHT(128), .COLOR(24'hFF_FF_00))  // yellow
       paddle1(.x(11'd0), .y(paddle_y), .hcount(hcount), .vcount(vcount), .pixel(paddle_pixel));
 
 
-
+   // draw puck
    blob #(.WIDTH(64), .HEIGHT(64), .COLOR(24'hFF_00_00))  // red
       puck(.x(puck_x), .y(puck_y), .hcount(hcount), .vcount(vcount), .pixel(puck_pixel));
 
