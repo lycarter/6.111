@@ -620,7 +620,7 @@ module pong_game
 				end
          end
          // x normal puck operation
-         else puck_x <= puck_x_vel ? puck_x + pspeed : puck_x - pspeed;
+         else if (!game_over) puck_x <= puck_x_vel ? puck_x + pspeed : puck_x - pspeed;
 
          // y collision puck operation
          // puck hits top wall
