@@ -602,13 +602,12 @@ module pong_game
    end
 
    // draw paddle
-
-   blob #(.WIDTH(16), .HEIGHT(128), .COLOR(24'hFF_FF_00))  // yellow
+   blob #(.WIDTH(PADDLE_WIDTH), .HEIGHT(PADDLE_HEIGHT), .COLOR(24'hFF_FF_00))  // yellow
       paddle1(.x(11'd0), .y(paddle_y), .hcount(hcount), .vcount(vcount), .pixel(paddle_pixel));
 
 
    // draw puck
-   blob #(.WIDTH(64), .HEIGHT(64), .COLOR(24'hFF_00_00))  // red
+   blob #(.WIDTH(PUCK_DIM), .HEIGHT(PUCK_DIM), .COLOR(24'hFF_00_00))  // red
       puck(.x(puck_x), .y(puck_y), .hcount(hcount), .vcount(vcount), .pixel(puck_pixel));
 
 
