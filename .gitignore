@@ -1,3 +1,5 @@
+/labs/lab3/lab_ise/*
+
 ## Core latex/pdflatex auxiliary files:
 *.aux
 *.lof
@@ -195,3 +197,4 @@ TSWLatexianTemp*
 
 # auto folder when using emacs and auctex 
 /auto/*
+labs/lab3/lab3_ise/
