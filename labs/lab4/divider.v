@@ -3,11 +3,11 @@
 module divider(
     input clock_25mhz,         // system clock
     input reset_sync,          // system reset
-    output one_hz_enable       // 1hz clock
+    output one_hz_enable       // 1hz pulse
     );
 
-  reg [24:0] count;
-  reg enable;
+  reg [24:0] count = 0;
+  reg enable = 0;
 
   always @(posedge clock_25mhz) begin
     if (reset_sync) begin

@@ -47,57 +47,88 @@ module labkit(
     display_8hex display(.clk(clock_25mhz),.data(data), .seg(segments), .strobe(AN));    
     assign SEG[6:0] = segments;
     assign SEG[7] = 1'b1;
+    
+// instantiate inputs:
+    wire reset_sync;
+    synchronize rs(.clk(clock_25mhz), .in(SW[15]), .out(reset_sync));
+
+
+    wire hidden_switch, brake, driver_door, passenger_door, reprogram;
+    
+    debounce hidden_switch_db(.reset(reset_sync), .clock(clock_25mhz),
+        .noisy(BTNU), .clean(hidden_switch));
+    debounce brake_db(.reset(reset_sync), .clock(clock_25mhz),
+        .noisy(BTND), .clean(brake));
+    debounce driver_door_db(.reset(reset_sync), .clock(clock_25mhz),
+        .noisy(BTNL), .clean(driver_door));
+    debounce passenger_door_db(.reset(reset_sync), .clock(clock_25mhz),
+        .noisy(BTNR), .clean(passenger_door));
+    debounce reprogram_db(.reset(reset_sync), .clock(clock_25mhz),
+        .noisy(BTNC), .clean(reprogram));
+    
+    wire ignition_switch;
+    debounce ignition_switch_db(.reset(reset_sync), .clock(clock_25mhz),
+        .noisy(SW[7]), .clean(ignition_switch));
+    
+    wire [1:0] time_parameter_selecter;
+    debounce tps1_db(.reset(reset_sync), .clock(clock_25mhz),
+        .noisy(SW[5]), .clean(time_parameter_selecter[1]));
+    debounce tps2_db(.reset(reset_sync), .clock(clock_25mhz),
+            .noisy(SW[4]), .clean(time_parameter_selecter[0]));
+    
+    wire [3:0] time_value;
+    debounce tv1_db(.reset(reset_sync), .clock(clock_25mhz),
+        .noisy(SW[0]), .clean(time_value[0]));
+    debounce tv2_db(.reset(reset_sync), .clock(clock_25mhz),
+        .noisy(SW[1]), .clean(time_value[1]));
+    debounce tv3_db(.reset(reset_sync), .clock(clock_25mhz),
+        .noisy(SW[2]), .clean(time_value[2]));
+    debounce tv4_db(.reset(reset_sync), .clock(clock_25mhz),
+        .noisy(SW[3]), .clean(time_value[3]));
+    
+    wire status_indicator_led, fuel_pump_power, siren_out;
+    assign LED[0] = status_indicator_led;
+    assign LED[1] = fuel_pump_power;
+    assign JA[0] = siren_out;
 
 // declare wires as shown in Figure 2 to connect the submodules:
-    wire reset_sync;    
     wire one_hz_enable;
     wire [3:0] value;
     wire expired, start_timer; 
+    wire sound_enable;
 
     // instantiate the submodules and wire their inputs and outputs
     // (use the labkit's clock_25mhz as the clock to all blocks) 
-    divider divider1 (.clock_25mhz(clock_25mhz), .reset_sync(reset_sync),
-         .one_hz_enable(one_hz_enable));
-    timer timer1(.clock_25mhz(clock_25mhz), .reset_sync(reset_sync), .value(value),  
-         .expired(expired), .start_timer(start_timer));
-
-//////////////////////////////////////////////////////////////////////////////////
-//
-//  remove these lines and insert your lab here
-
-    assign LED = SW;     
-    assign JA[7:0] = 8'b0;
-    assign data = {28'h0123456, SW[3:0]};   // display 0123456 + SW
+    
+    wire [3:0] T_ARM_DELAY, T_DRIVER_DELAY, T_PASSENGER_DELAY, T_ALARM_DELAY;
+    wire [3:0] state_hex;
+    
+    time_parameters tp(.time_parameter_selecter(time_parameter_selecter),
+        .time_value(time_value), .reprogram(reprogram), .T_DRIVER_DELAY(T_DRIVER_DELAY),
+        .T_PASSENGER_DELAY(T_PASSENGER_DELAY), .T_ARM_DELAY(T_ARM_DELAY), .T_ALARM_DELAY(T_ALARM_DELAY));
+    
+    anti_theft_fsm big_fsm(.ignition_switch(ignition_switch), .driver_door(driver_door), .passenger_door(passenger_door),
+        .clock_25mhz(clock_25mhz), .reset_sync(reset_sync), .T_DRIVER_DELAY(T_DRIVER_DELAY),
+        .T_PASSENGER_DELAY(T_PASSENGER_DELAY), .T_ARM_DELAY(T_ARM_DELAY), .T_ALARM_DELAY(T_ALARM_DELAY),
+        .status_indicator_led_status(status_indicator_led_status), .sound(sound_enable), .state_hex(state_hex),
+        .hex1(hex1), .hex2(hex2), .hex3(hex3), .hex4(hex4));
+        
+    siren siren1(.clock_25mhz(clock_25mhz), .enable(sound_enable), .audio_out(siren_out));
+    
+    fuel_pump_fsm fpfsm(.ignition_switch(ignition_switch), .hidden_switch(hidden_switch), .brake(brake), .reset_sync(reset_sync),
+        .clock_25mhz(clock_25mhz), .fuel_pump(fuel_pump_power));
+        
+    
+    assign LED[15:2] = SW[15:2];     
+    assign JA[7:1] = 7'b0;
+    assign data = {hex1, hex2, hex3, hex4, 12'h456, state_hex}; // driver, passenger, arm, alarm, 4, 5, 6, state
     assign LED16_R = BTNL;                  // left button -> red led
     assign LED16_G = BTNC;                  // center button -> green led
     assign LED16_B = BTNR;                  // right button -> blue led
     assign LED17_R = BTNL;
     assign LED17_G = BTNC;
     assign LED17_B = BTNR; 
-
-
-
-//
-//////////////////////////////////////////////////////////////////////////////////
-
-
-
-
- 
-//////////////////////////////////////////////////////////////////////////////////
-// sample Verilog to generate color bars
     
-    wire [9:0] hcount;
-    wire [9:0] vcount;
-    wire hsync, vsync, at_display_area;
-    vga vga1(.vga_clock(clock_25mhz),.hcount(hcount),.vcount(vcount),
-          .hsync(hsync),.vsync(vsync),.at_display_area(at_display_area));
-        
-    assign VGA_R = at_display_area ? {4{hcount[7]}} : 0;
-    assign VGA_G = at_display_area ? {4{hcount[6]}} : 0;
-    assign VGA_B = at_display_area ? {4{hcount[5]}} : 0;
-    assign VGA_HS = ~hsync;
-    assign VGA_VS = ~vsync;
 endmodule
 
 module clock_quarter_divider(input clk100_mhz, output reg clock_25mhz = 0);
@@ -109,30 +140,5 @@ module clock_quarter_divider(input clk100_mhz, output reg clock_25mhz = 0);
             clock_25mhz <= ~clock_25mhz;
         end
     end
-endmodule
-
-module vga(input vga_clock,
-            output reg [9:0] hcount = 0,    // pixel number on current line
-            output reg [9:0] vcount = 0,	 // line number
-            output vsync, hsync, at_display_area);
-    // Counters.
-    always @(posedge vga_clock) begin
-        if (hcount == 799) begin
-            hcount <= 0;
-        end
-        else begin
-            hcount <= hcount +  1;
-        end
-        if (vcount == 524) begin
-            vcount <= 0;
-        end
-        else if(hcount == 799) begin
-            vcount <= vcount + 1;
-        end
-    end
-    
-    assign hsync = (hcount < 96);
-    assign vsync = (vcount < 2);
-    assign at_display_area = (hcount >= 144 && hcount < 784 && vcount >= 35 && vcount < 515);
 endmodule
 
