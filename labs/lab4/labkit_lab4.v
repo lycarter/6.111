@@ -48,6 +48,19 @@ module labkit(
     assign SEG[6:0] = segments;
     assign SEG[7] = 1'b1;
 
+// declare wires as shown in Figure 2 to connect the submodules:
+    wire reset_sync;    
+    wire one_hz_enable;
+    wire [3:0] value;
+    wire expired, start_timer; 
+
+    // instantiate the submodules and wire their inputs and outputs
+    // (use the labkit's clock_25mhz as the clock to all blocks) 
+    divider divider1 (.clock_25mhz(clock_25mhz), .reset_sync(reset_sync),
+         .one_hz_enable(one_hz_enable));
+    timer timer1(.clock_25mhz(clock_25mhz), .reset_sync(reset_sync), .value(value),  
+         .expired(expired), .start_timer(start_timer));
+
 //////////////////////////////////////////////////////////////////////////////////
 //
 //  remove these lines and insert your lab here
