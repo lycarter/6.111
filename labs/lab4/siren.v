@@ -1,7 +1,8 @@
 `timescale 1ns / 1ps
 
-module siren(
-    input clock_25mhz,         // system clock
+module siren #(parameter STEP=10) // how far to move the endpoint
+
+	(input clock_25mhz,         // system clock
     input enable,              // siren enable
     output audio_out           // audio signal
     );
@@ -23,7 +24,7 @@ module siren(
 			state <= 1;
 		end
 		if (count == endpoint) begin
-			endpoint <= state ? endpoint + 5 : endpoint - 5;
+			endpoint <= state ? endpoint + STEP : endpoint - STEP;
 			count <= 0;
 			audio_reg <= !audio_reg;  // toggle waveform
 		end
