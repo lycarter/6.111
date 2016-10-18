@@ -87,40 +87,44 @@ module labkit(
         .noisy(SW[3]), .clean(time_value[3]));
     
     wire status_indicator_led, fuel_pump_power, siren_out;
-    assign LED[0] = status_indicator_led;
-    assign LED[1] = fuel_pump_power;
-    assign JA[0] = siren_out;
+
 
 // declare wires as shown in Figure 2 to connect the submodules:
     wire one_hz_enable;
     wire [3:0] value;
     wire expired, start_timer; 
     wire sound_enable;
+    wire [1:0] status_indicator_led_status;
 
     // instantiate the submodules and wire their inputs and outputs
     // (use the labkit's clock_25mhz as the clock to all blocks) 
     
     wire [3:0] T_ARM_DELAY, T_DRIVER_DELAY, T_PASSENGER_DELAY, T_ALARM_DELAY;
-    wire [3:0] state_hex;
+    wire [3:0] hex1, hex2, hex3, hex4, state_hex;
+    wire led1, led2, led3, led4;
     
     time_parameters tp(.time_parameter_selecter(time_parameter_selecter),
         .time_value(time_value), .reprogram(reprogram), .T_DRIVER_DELAY(T_DRIVER_DELAY),
         .T_PASSENGER_DELAY(T_PASSENGER_DELAY), .T_ARM_DELAY(T_ARM_DELAY), .T_ALARM_DELAY(T_ALARM_DELAY));
     
-    anti_theft_fsm big_fsm(.ignition_switch(ignition_switch), .driver_door(driver_door), .passenger_door(passenger_door),
+    anti_theft_fsm big_fsm(.reprogram(reprogram), .ignition_switch(ignition_switch), .driver_door(driver_door), .passenger_door(passenger_door),
         .clock_25mhz(clock_25mhz), .reset_sync(reset_sync), .T_DRIVER_DELAY(T_DRIVER_DELAY),
         .T_PASSENGER_DELAY(T_PASSENGER_DELAY), .T_ARM_DELAY(T_ARM_DELAY), .T_ALARM_DELAY(T_ALARM_DELAY),
         .status_indicator_led_status(status_indicator_led_status), .sound(sound_enable), .state_hex(state_hex),
-        .hex1(hex1), .hex2(hex2), .hex3(hex3), .hex4(hex4));
+        .hex1(hex1), .hex2(hex2), .hex3(hex3), .hex4(hex4), .led1(led1), .led2(led2), .led3(led3), .led4(led4));
         
     siren siren1(.clock_25mhz(clock_25mhz), .enable(sound_enable), .audio_out(siren_out));
     
     fuel_pump_fsm fpfsm(.ignition_switch(ignition_switch), .hidden_switch(hidden_switch), .brake(brake), .reset_sync(reset_sync),
         .clock_25mhz(clock_25mhz), .fuel_pump(fuel_pump_power));
         
+    status_indicator_led_fsm silfsm(.status_indicator_led_status(status_indicator_led_status),
+        .clock_25mhz(clock_25mhz), .reset_sync(reset_sync), .status_indicator_led(status_indicator_led));
+        
     
-    assign LED[15:2] = SW[15:2];     
+    assign LED[15:4] = {led1, led2, led3, led4, SW[11:4]};     
     assign JA[7:1] = 7'b0;
+//    assign data = {T_DRIVER_DELAY, T_PASSENGER_DELAY, T_ARM_DELAY, T_ALARM_DELAY, 12'h456, state_hex}; // driver, passenger, arm, alarm, 4, 5, 6, state
     assign data = {hex1, hex2, hex3, hex4, 12'h456, state_hex}; // driver, passenger, arm, alarm, 4, 5, 6, state
     assign LED16_R = BTNL;                  // left button -> red led
     assign LED16_G = BTNC;                  // center button -> green led
@@ -128,6 +132,12 @@ module labkit(
     assign LED17_R = BTNL;
     assign LED17_G = BTNC;
     assign LED17_B = BTNR; 
+    
+    
+    assign LED[0] = status_indicator_led;
+    assign LED[1] = fuel_pump_power;
+    assign LED[3:2] = status_indicator_led_status;
+    assign JA[0] = siren_out;
     
 endmodule
 

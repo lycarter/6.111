@@ -40,10 +40,10 @@ module time_parameters(
     always @(*) begin
         if (reprogram) begin
             case (time_parameter_selecter)
-                2'b00: arm <= time_parameter_selecter;
-                2'b01: driver <= time_parameter_selecter;
-                2'b10: passenger <= time_parameter_selecter;
-                2'b11: alarm <= time_parameter_selecter;
+                2'b00: arm <= time_value;
+                2'b01: driver <= time_value;
+                2'b10: passenger <= time_value;
+                2'b11: alarm <= time_value;
                 default: ;  // do nothing, shouldn't actually ever be hit anyway
             endcase
         end
