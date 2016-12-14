@@ -347,6 +347,15 @@ module labkit (beep, audio_reset_b, ac97_sdata_out, ac97_sdata_in, ac97_synch,
   // for the test transmission
   wire button_up_debounced;
   debounce db_up(reset, clock_27mhz, button_up, button_up_debounced);
+
+  wire button_0_debounced, button_1_debounced, button_2_debounced, button_3_debounced;
+  debounce db_0(reset, clock_27mhz, button0, button_0_debounced);
+  debounce db_1(reset, clock_27mhz, button1, button_1_debounced);
+  debounce db_2(reset, clock_27mhz, button2, button_2_debounced);
+  debounce db_3(reset, clock_27mhz, button3, button_3_debounced);
+  
+  wire synced_ir_input;
+  synchronize ir_sync(.in(~user3[30]),.out(synced_ir_input),.clk(clock_27mhz));
  
 ///////////////////////////////////////////////////////////////////////////////////////////
 // 
@@ -358,455 +367,52 @@ module labkit (beep, audio_reset_b, ac97_sdata_out, ac97_sdata_in, ac97_synch,
 // 
 //
 // 
-  wire [4:0]  transmit_address = 5'h1; //address is 1 for TV 
-  wire [6:0]  transmit_command = 7'h10; //command is 16 (hex 10) for channel up
-  wire        transmit         = ~button_up_debounced; //up button controls transmit for now
-  wire [43:0] my_hex_data = 44'b0;   // use this to display the decoded commands and for debug
+  wire [4:0]  receive_address, transmit_address;
+  wire [6:0]  receive_command, transmit_command;
+  wire transmit;
+  wire [27:0] debugging_hex_data;
+
+
+  remote_receiver receiver (.clock_27mhz(clock_27mhz),
+                            .reset(reset),
+                            .ir_in(synced_ir_input),
+                            .btn_0(button_0_debounced),
+                            .btn_1(button_1_debounced),
+                            .btn_2(button_2_debounced),
+                            .btn_3(button_3_debounced),
+                            .receive_command(receive_command),
+                            .receive_address(receive_address)
+                            .transmit_command(transmit_command), // out
+                            .transmit_address(transmit_address), // out
+                            .transmit_enable(transmit),  // out
+                            .debug_display(debugging_hex_data));
+
+  
+  remote_transmitter transmitter (.clk(clock_27mhz),
+										              .reset(reset),
+										              .address(transmit_address), // in
+									  	            .command(transmit_command), // in
+										              .transmit(transmit),  // in
+										              .signal_out(user3[31]));	
 //
 //
 // 
 //
 ////////////////////////////////////////////////////////////////////////////////////////////
 
-  
-  remote_transmitter transmitter (.clk(clock_27mhz),
-										    .reset(reset),
-										    .address(transmit_address),
-									  	    .command(transmit_command),
-										    .transmit(transmit),
-										    .signal_out(user3[31]));					  
+  wire [43:0] my_hex_data;
+  assign my_hex_data[43:36] = receive_address;
+  assign my_hex_data[35:28] = receive_command;
+  assign my_hex_data[27:0]  = debugging_hex_data;
 
   display_16hex disp(reset, clock_27mhz, {my_hex_data,
                                           3'b0,transmit, //1 if transmitting
                                           3'b0,transmit_address, //signal_out address (2 digits)
-														1'b0,transmit_command}, //signal_out command (2 digits)
+														              1'b0,transmit_command}, //signal_out command (2 digits)
 		disp_blank, disp_clock, disp_rs, disp_ce_b,
 		disp_reset_b, disp_data_out);
 
 			    
 endmodule
 
-
-///////////////////////////////////////////////////////////////////////////////
-//
-// 6.111 Remote Control Transmitter Module
-//
-// Outputs a 12-bit Sony remote control signal based on the Sony Infrared Command 
-// (SIRC) specification. signal_out can be used to control a TSKS400S Infrared 
-// Emitting Diode, using a BJT to produce a stronger driving signal.
-// SIRC uses pulse-width modulation to encode the 10-bit signal, with a 600us 
-// base frequency modulated by a 40kHz square wave with 25% duty cycle.
-//
-// Created: February 29, 2009
-// Author: Adam Lerer,
-// Updated October 4, 2010 - fixed 40Khz modulation, inserted 45ms between commands
-//
-///////////////////////////////////////////////////////////////////////////////
-module remote_transmitter (input wire clk, //27 mhz clock
-									input wire reset, //FPGA reset
-									input wire [4:0] address, // 5-bit signal address
-									input wire [6:0] command, // 7-bit signal command
-									input wire transmit, // transmission occurs when transmit is asserted
-									output wire signal_out); //output to IR transmitter
-
-  wire [11:0] value = {address, command}; //the value to be transmitted
-  
-  ///////////////////////////////////////////////////////////////////////////////////////
-  //
-  // here we count the number of "ones" in the signal, subtract from wait time
-  // and pad the wait state to start the next command sequence exactly 45ms later. 
-  wire [3:0] sum_ones = address[4] + address[3] + address[2] + address[1] + address[0] +
-				command[6] + command[5] + command[4] + command[3] + command[2] + command[1] + command[0];
-  wire[9:0] WAIT_TO_45MS = 10'd376 - (sum_ones*8);
-  //
-  ///////////////////////////////////////////////////////////////////////////////////////
-  
-  reg [2:0] next_state;
-  // cur_value latches the value input when the transmission begins,
-  // and gets right shifted in order to transmit each successive bit
-  reg [11:0] cur_value;
-  // cur_bit keeps track of how many bits have been transmitted
-  reg [3:0] cur_bit;
-  reg [2:0] state;
-  
-  wire [9:0] timer_length;  // large number of future options
-  
-  localparam IDLE =  3'd0;
-  localparam WAIT =  3'd1;
-  localparam START = 3'd2;
-  localparam TRANS = 3'd3;
-  localparam BIT =   3'd4;
-  
-  // this counter is used to modulate the transmitted signal 
-  // by a 40kHz 25% duty cycle square wave  gph 10/2/2010
-  reg [10:0] mod_count;  
-  
-  wire start_timer;
-  wire expired;
-  
-  timer t (.clk(clk),
-           .reset(reset),
-			  .start_timer(start_timer),
-			  .length(timer_length),
-			  .expired(expired));
-			  
-  always@(posedge clk) 
-  begin
-    // signal modulation
-	 mod_count <= (mod_count == 674) ? 0 : mod_count + 1;   // was 1349 
-    if (reset)
-	   state <= IDLE;
-	 else begin
-	   if (state == START) 
-		begin
-		  cur_bit <= 0;
-		  cur_value <= value;
-		end
-		// when a bit finishes being transmitted, left shift cur_value
-		// so that the next bit can be transmitted, and increment cur_bit
-	   if (state == BIT && next_state == TRANS) 
-		begin
-		  cur_bit <= cur_bit + 1;
-		  cur_value <= {1'b0, cur_value[11:1]};
-		end
-      state <= next_state;
-    end
-  end
-  
-  always@* 
-  begin
-    case(state)
-	   IDLE:  next_state = transmit  ? WAIT : IDLE;
-		WAIT:  next_state = expired ? (transmit ? START : IDLE) : WAIT;
-		START: next_state = expired ? TRANS : START;
-		TRANS: next_state = expired ? BIT : TRANS;
-		BIT :  next_state = expired ? (cur_bit == 11 ? WAIT : TRANS) : BIT;
-		default: next_state = IDLE;
-	 endcase 
-  end
-  // always start the timer on a state transition
-  assign start_timer = (state != next_state);
-  assign timer_length = (next_state == WAIT) ? WAIT_TO_45MS :  // was 63; 600-4-24-6 = 566
-                        (next_state == START) ? 10'd32 :
-								(next_state == TRANS) ? 10'd8 :
-								(next_state == BIT ) ? (cur_value[0] ? 10'd16 : 10'd8 ) : 10'd0;
-  assign signal_out = ((state == START) || (state == BIT)) && (mod_count < 169);	// was 338  gph					
-endmodule
-
-///////////////////////////////////////////////////////////////////////////////
-// A programmable timer with 75us increments. When start_timer is asserted,
-// the timer latches length, and asserts expired for one clock cycle 
-// after 'length' 75us intervals have passed. e.g. if length is 10, timer will
-// assert expired after 750us.
-///////////////////////////////////////////////////////////////////////////////
-module timer (input wire clk,
-				 input wire reset,
-				 input wire start_timer,
-				 input wire [9:0] length,
-				 output wire expired);
-  
-  wire enable;
-  divider_600us sc(.clk(clk),.reset(start_timer),.enable(enable));
-  reg [9:0] count_length;
-  reg [9:0] count;
-  reg counting;
-  
-  always@(posedge clk) 
-  begin
-	 if (reset)
-		counting <= 0;
-	 else if (start_timer) 
-	 begin
-		count_length <= length;
-		count <= 0;
-		counting <= 1;
-	 end
-	 else if (counting && enable)
-		count <= count + 1;
-	 else if (expired)
-		counting <= 0;
-  end
-  
-  assign expired = (counting && (count == count_length));
-endmodule	
-
-///////////////////////////////////////////////////////////////////////////////
-// enable goes high every 75us, providing 8x oversampling for 
-// 600us width signal (with 27mhz clock)
-///////////////////////////////////////////////////////////////////////////////
-module divider_600us (input wire clk,
-							 input wire reset,
-							 output wire enable);
-
-  reg [10:0] count;
-
-  always@(posedge clk) 
-  begin
-	 if (reset)
-		count <= 0;
-	 else if (count == 2024)
-		count <= 0;
-	 else
-		count <= count + 1;
-  end
-  assign enable = (count == 2024);  
-endmodule  
-
-// Switch Debounce Module
-// use your system clock for the clock input
-// to produce a synchronous, debounced output
-module debounce #(parameter DELAY=270000)   // .01 sec with a 27Mhz clock
-	        (input reset, clock, noisy,
-	         output reg clean);
-
-   reg [18:0] count;
-   reg new;
-
-   always @(posedge clock)
-     if (reset)
-       begin
-	  count <= 0;
-	  new <= noisy;
-	  clean <= noisy;
-       end
-     else if (noisy != new)
-       begin
-	  new <= noisy;
-	  count <= 0;
-       end
-     else if (count == DELAY)
-       clean <= new;
-     else
-       count <= count+1;
-      
-endmodule
-
-
-///////////////////////////////////////////////////////////////////////////////
-//
-// 6.111 FPGA Labkit -- Hex display driver
-//
-// File:   display_16hex.v
-// Date:   24-Sep-05
-//
-// Created: April 27, 2004
-// Author: Nathan Ickes
-//
-// 24-Sep-05 Ike: updated to use new reset-once state machine, remove clear
-// 28-Nov-06 CJT: fixed race condition between CE and RS (thanks Javier!)
-//
-// This verilog module drives the labkit hex dot matrix displays, and puts
-// up 16 hexadecimal digits (8 bytes).  These are passed to the module
-// through a 64 bit wire ("data"), asynchronously.  
-//
-///////////////////////////////////////////////////////////////////////////////
-
-module display_16hex (reset, clock_27mhz, data, 
-		disp_blank, disp_clock, disp_rs, disp_ce_b,
-		disp_reset_b, disp_data_out);
-
-   input reset, clock_27mhz;    // clock and reset (active high reset)
-   input [63:0] data;		// 16 hex nibbles to display
-   
-   output disp_blank, disp_clock, disp_data_out, disp_rs, disp_ce_b, 
-	  disp_reset_b;
-   
-   reg disp_data_out, disp_rs, disp_ce_b, disp_reset_b;
-   
-   ////////////////////////////////////////////////////////////////////////////
-   //
-   // Display Clock
-   //
-   // Generate a 500kHz clock for driving the displays.
-   //
-   ////////////////////////////////////////////////////////////////////////////
-   
-   reg [4:0] count;
-   reg [7:0] reset_count;
-   reg clock;
-   wire dreset;
-
-   always @(posedge clock_27mhz)
-     begin
-	if (reset)
-	  begin
-	     count = 0;
-	     clock = 0;
-	  end
-	else if (count == 26)
-	  begin
-	     clock = ~clock;
-	     count = 5'h00;
-	  end
-	else
-	  count = count+1;
-     end
-   
-   always @(posedge clock_27mhz)
-     if (reset)
-       reset_count <= 100;
-     else
-       reset_count <= (reset_count==0) ? 0 : reset_count-1;
-
-   assign dreset = (reset_count != 0);
-
-   assign disp_clock = ~clock;
-
-   ////////////////////////////////////////////////////////////////////////////
-   //
-   // Display State Machine
-   //
-   ////////////////////////////////////////////////////////////////////////////
-      
-   reg [7:0] state;		// FSM state
-   reg [9:0] dot_index;		// index to current dot being clocked out
-   reg [31:0] control;		// control register
-   reg [3:0] char_index;	// index of current character
-   reg [39:0] dots;		// dots for a single digit 
-   reg [3:0] nibble;		// hex nibble of current character
-   
-   assign disp_blank = 1'b0; // low <= not blanked
-   
-   always @(posedge clock)
-     if (dreset)
-       begin
-	  state <= 0;
-	  dot_index <= 0;
-	  control <= 32'h7F7F7F7F;
-       end
-     else
-       casex (state)
-	 8'h00:
-	   begin
-	      // Reset displays
-	      disp_data_out <= 1'b0; 
-	      disp_rs <= 1'b0; // dot register
-	      disp_ce_b <= 1'b1;
-	      disp_reset_b <= 1'b0;	     
-	      dot_index <= 0;
-	      state <= state+1;
-	   end
-	 
-	 8'h01:
-	   begin
-	      // End reset
-	      disp_reset_b <= 1'b1;
-	      state <= state+1;
-	   end
-	 
-	 8'h02:
-	   begin
-	      // Initialize dot register (set all dots to zero)
-	      disp_ce_b <= 1'b0;
-	      disp_data_out <= 1'b0; // dot_index[0];
-	      if (dot_index == 639)
-		state <= state+1;
-	      else
-		dot_index <= dot_index+1;
-	   end
-	 
-	 8'h03:
-	   begin
-	      // Latch dot data
-	      disp_ce_b <= 1'b1;
-	      dot_index <= 31;		// re-purpose to init ctrl reg
-	      disp_rs <= 1'b1; // Select the control register
-	      state <= state+1;
-	   end
-	 
-	 8'h04:
-	   begin
-	      // Setup the control register
-	      disp_ce_b <= 1'b0;
-	      disp_data_out <= control[31];
-	      control <= {control[30:0], 1'b0};	// shift left
-	      if (dot_index == 0)
-		state <= state+1;
-	      else
-		dot_index <= dot_index-1;
-	   end
-	  
-	 8'h05:
-	   begin
-	      // Latch the control register data / dot data
-	      disp_ce_b <= 1'b1;
-	      dot_index <= 39;		// init for single char
-	      char_index <= 15;		// start with MS char
-	      state <= state+1;
-	      disp_rs <= 1'b0;	 	// Select the dot register
-	   end
-	 
-	 8'h06:
-	   begin
-	      // Load the user's dot data into the dot reg, char by char
-	      disp_ce_b <= 1'b0;
-	      disp_data_out <= dots[dot_index]; // dot data from msb
-	      if (dot_index == 0)
-	        if (char_index == 0)
-	          state <= 5;			// all done, latch data
-		else
-		begin
-		  char_index <= char_index - 1;	// goto next char
-		  dot_index <= 39;
-		end
-	      else
-		dot_index <= dot_index-1;	// else loop thru all dots 
-	   end
-
-       endcase
-
-   always @ (data or char_index)
-     case (char_index)
-       4'h0: 	 	nibble <= data[3:0];
-       4'h1: 	 	nibble <= data[7:4];
-       4'h2: 	 	nibble <= data[11:8];
-       4'h3: 	 	nibble <= data[15:12];
-       4'h4: 	 	nibble <= data[19:16];
-       4'h5: 	 	nibble <= data[23:20];
-       4'h6: 	 	nibble <= data[27:24];
-       4'h7: 	 	nibble <= data[31:28];
-       4'h8: 	 	nibble <= data[35:32];
-       4'h9: 	 	nibble <= data[39:36];
-       4'hA: 	 	nibble <= data[43:40];
-       4'hB: 	 	nibble <= data[47:44];
-       4'hC: 	 	nibble <= data[51:48];
-       4'hD: 	 	nibble <= data[55:52];
-       4'hE: 	 	nibble <= data[59:56];
-       4'hF: 	 	nibble <= data[63:60];
-     endcase
-      
-   always @(nibble)
-     case (nibble)
-       4'h0: dots <= 40'b00111110_01010001_01001001_01000101_00111110;
-       4'h1: dots <= 40'b00000000_01000010_01111111_01000000_00000000;
-       4'h2: dots <= 40'b01100010_01010001_01001001_01001001_01000110;
-       4'h3: dots <= 40'b00100010_01000001_01001001_01001001_00110110;
-       4'h4: dots <= 40'b00011000_00010100_00010010_01111111_00010000;
-       4'h5: dots <= 40'b00100111_01000101_01000101_01000101_00111001;
-       4'h6: dots <= 40'b00111100_01001010_01001001_01001001_00110000;
-       4'h7: dots <= 40'b00000001_01110001_00001001_00000101_00000011;
-       4'h8: dots <= 40'b00110110_01001001_01001001_01001001_00110110;
-       4'h9: dots <= 40'b00000110_01001001_01001001_00101001_00011110;
-       4'hA: dots <= 40'b01111110_00001001_00001001_00001001_01111110;
-       4'hB: dots <= 40'b01111111_01001001_01001001_01001001_00110110;
-       4'hC: dots <= 40'b00111110_01000001_01000001_01000001_00100010;
-       4'hD: dots <= 40'b01111111_01000001_01000001_01000001_00111110;
-       4'hE: dots <= 40'b01111111_01001001_01001001_01001001_01000001;
-       4'hF: dots <= 40'b01111111_00001001_00001001_00001001_00000001;
-     endcase
-   
-endmodule
-
-// pulse synchronizer
-module synchronize #(parameter NSYNC = 2)  // number of sync flops.  must be >= 2
-                   (input clk,in,
-                    output reg out);
-
-  reg [NSYNC-2:0] sync;
-
-  always @ (posedge clk)
-  begin
-    {out,sync} <= {sync[NSYNC-2:0],in};
-  end
-endmodule
 
