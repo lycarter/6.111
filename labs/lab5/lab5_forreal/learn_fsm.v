@@ -30,12 +30,12 @@ module learn_fsm(input clock_27mhz, reset,
     	if (reset) begin
     		state <= S_IDLE;
     		sequence <= 12'd0;
-    		cur_position <= 12'd0;
+    		cur_position <= 4'd0;
     		cur_bit <= 0;
 		end
 		else if (state == S_START) begin
 			sequence <= 12'd0;
-			cur_position <= 12'd0;
+			cur_position <= 4'd0;
 			cur_bit <= 0;
 		end
 		else if (state == S_IN_HIGH && (next_state == S_IN_LOW || next_state == S_IDLE)) begin
