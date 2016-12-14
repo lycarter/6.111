@@ -1,0 +1,9 @@
+MO display_16hex NULL display_16hex.v vlg51/display__16hex.bin 1481706101
+MO remote_transmitter NULL remote_transmitter.v vlg28/remote__transmitter.bin 1481706101
+MO remote_receiver NULL remote_receiver.v vlg68/remote__receiver.bin 1481706101
+MO debounce NULL debounce.v vlg1D/debounce.bin 1481706101
+MO labkit NULL lab_ir_control.v vlg7B/labkit.bin 1481706101
+MO learn_fsm NULL learn_fsm.v vlg43/learn__fsm.bin 1481706101
+MO synchronize NULL synchronize.v vlg2C/synchronize.bin 1481706101
+MO divider_600us NULL divider_600us.v vlg00/divider__600us.bin 1481706101
+MO timer NULL timer.v vlg09/timer.bin 1481706101
